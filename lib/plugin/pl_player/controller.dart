@@ -1112,6 +1112,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           }
         })),
       stream.error.listen((String event) {
+        final errorGeneration = _sourceGeneration;
         // The proxy emits a structured failure once. Seek/disconnect messages
         // from mpv must not trigger the ordinary URL reconnect loop.
         if (_parallelSession != null || _parallelFallbackTaken) return;
@@ -1123,7 +1124,9 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           if (event.startsWith('tcp: ffurl_read returned ') ||
               event.startsWith("Failed to open https://") ||
               event.startsWith("Can not open external file https://")) {
-            Future.delayed(const Duration(milliseconds: 3000), refreshPlayer);
+            Future.delayed(const Duration(milliseconds: 3000), () {
+              if (errorGeneration == _sourceGeneration) refreshPlayer();
+            });
           }
           return;
         }
@@ -1137,6 +1140,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
             const Duration(milliseconds: 10000),
             () {
               Future.delayed(const Duration(milliseconds: 3000), () {
+                if (errorGeneration != _sourceGeneration) return;
                 // if (kDebugMode) {
                 //   debugPrint("isBuffering.value: ${isBuffering.value}");
                 // }
@@ -1187,6 +1191,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   /// 跳转至指定位置
   Future<void> seekTo(Duration position, {bool isSeek = true}) async {
+    final generation = _sourceGeneration;
     if (_playerCount == 0) {
       return;
     }
@@ -1196,10 +1201,12 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     _heartDuration = position.inSeconds;
 
     Future<void> seek() async {
+      if (generation != _sourceGeneration) return;
       if (isSeek && _parallelSession == null) {
         /// 拖动进度条调节时，不等待第一帧，防止抖动
         await _videoPlayerController?.stream.buffer.first;
       }
+      if (generation != _sourceGeneration) return;
       danmakuController?.clear();
       try {
         _parallelSession?.proxy?.cancelReaders();

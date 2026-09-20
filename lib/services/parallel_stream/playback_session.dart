@@ -59,8 +59,9 @@ class ParallelPlaybackSession {
     final mode = ParallelCdnMode.values[Pref.parallelStreamCdnMode];
     // Preserve custom/unsupported sources rather than replacing them with a
     // different URL from the API metadata.
-    if (!isParallelMediaUri(Uri.tryParse(source.videoSource) ?? Uri()))
+    if (!isParallelMediaUri(Uri.tryParse(source.videoSource) ?? Uri())) {
       return null;
+    }
     if (audioOnly &&
         (Pref.disableAudioCDN || source.audioSource?.isNotEmpty != true)) {
       return null;

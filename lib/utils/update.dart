@@ -20,10 +20,11 @@ abstract final class Update {
   static Future<void> checkUpdate([bool isAuto = true]) async {
     // This fork has its own application ID and signing key.
     if (Platform.isAndroid) {
-      if (!isAuto)
+      if (!isAuto) {
         await PageUtils.launchURL(
           'https://github.com/gngnggnn1/PiliPlus/releases',
         );
+      }
       return;
     }
     if (kDebugMode) return;

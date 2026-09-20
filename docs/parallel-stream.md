@@ -9,6 +9,8 @@
 
 可选择跟随原有 CDN 设置、优先大陆节点或优先海外节点。节点可用性受地区、网络和签名影响，没有普遍最快的选项。既有「音频不跟随 CDN 设置」启用时，音频保留直连。
 
+「并发加载状态」显示当前连接、下载量、重试和回退状态，点击可刷新。Android 开启本功能时暂停旧的 CDN 测速，避免测速流量干扰播放。
+
 仅处理 Android 普通 UGC DASH 视频。直播、离线文件、非 DASH、番剧/课程及已标记 DRM 的视频沿用上游播放方式。并发加载不改变账号权限或可选画质，也不保证能改善每一种网络的速度。蜂窝网络默认不参与；关闭 Wi-Fi 限制可能增加流量和耗电。Wi-Fi 检测失败时保守停用；系统 VPN 等复杂路由仍需实机验证。
 
 应用名称为 **PiliPlus Parallel**，包名为 `io.github.gngnggnn1.piliplus.parallel`，数据与官方版分开。Android 的检查更新按钮打开本 fork 的 Releases，避免下载官方安装包覆盖此版本。
@@ -27,7 +29,7 @@
 
 ## 本地验证与构建
 
-Flutter 版本按 `pubspec.yaml`（当前 3.47.4）；Android 使用 JDK 17 或兼容版本、API 37.0、对应 Build Tools 和 Flutter 所需 NDK。Windows 的 pub cache 建议使用短路径，Git 开启当前进程的 `core.longpaths`。
+Flutter 版本按 `pubspec.yaml`（当前 3.47.4）；Android 使用 JDK 17 或兼容版本、API 37.0、对应 Build Tools 和 Flutter 所需 NDK。AGP 从上游的 9.0.1 调整为 9.1.1，以满足 [API 37.0 的最低工具版本要求](https://developer.android.com/build/releases/about-agp#api-level-support)。Windows 的 pub cache 建议使用短路径，Git 开启当前进程的 `core.longpaths`。
 
 ```powershell
 $env:PUB_CACHE = 'C:\dev\pili-pub'

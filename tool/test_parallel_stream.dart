@@ -381,11 +381,12 @@ Future<void> main() async {
         final (_, bytes, _) = await h.read();
         check(bytes.length == h.fixture.bytes.length, 'all bytes delivered');
         check(h.proxy.stats.peak <= concurrency, 'connection budget exceeded');
-        if (concurrency == 16)
+        if (concurrency == 16) {
           check(
             h.proxy.stats.peak > 8,
             '16 mode must use additional connections',
           );
+        }
       }, concurrency: concurrency),
     );
   }
