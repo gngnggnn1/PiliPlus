@@ -18,6 +18,14 @@ import 'package:material_ui/material_ui.dart';
 abstract final class Update {
   // 检查更新
   static Future<void> checkUpdate([bool isAuto = true]) async {
+    // This fork has its own application ID and signing key.
+    if (Platform.isAndroid) {
+      if (!isAuto)
+        await PageUtils.launchURL(
+          'https://github.com/gngnggnn1/PiliPlus/releases',
+        );
+      return;
+    }
     if (kDebugMode) return;
     SmartDialog.dismiss();
     try {

@@ -1,4 +1,4 @@
-import 'dart:async' show StreamSubscription, Timer;
+import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:convert' show ascii, utf8;
 import 'dart:io' show Platform;
 import 'dart:math' show max, min;
@@ -29,6 +29,7 @@ import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/services/parallel_stream/playback_session.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
@@ -146,6 +147,79 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   late final tryLook = !Accounts.get(AccountType.video).isLogin && Pref.p1080;
 
   late DataSource dataSource;
+  ParallelPlaybackSession? _parallelSession;
+  Media? _parallelDirectMedia;
+  int _sourceGeneration = 0;
+  bool _parallelFallbackTaken = false;
+  bool _parallelOpened = false;
+  bool _parallelDesiredPlaying = false;
+  Future<void> _mediaOperations = Future<void>.value();
+
+  static String get parallelStreamStatus {
+    final controller = _instance;
+    if (controller == null) return '当前没有播放会话';
+    final proxy = controller._parallelSession?.proxy;
+    if (proxy != null && controller._parallelOpened) {
+      final stats = proxy.stats;
+      return '并发加载中：${stats.active}/${proxy.concurrency} 个连接，'
+          '已下载 ${(stats.networkBytes / 1048576).toStringAsFixed(1)} MB，重试 ${stats.retries} 次';
+    }
+    if (controller._parallelFallbackTaken) return '本次视频已回退到普通播放';
+    return '当前使用普通播放';
+  }
+
+  Future<void> _mediaOperation(
+    int generation,
+    Future<void> Function() operation,
+  ) {
+    final result = _mediaOperations.then((_) async {
+      if (generation == _sourceGeneration && _playerCount > 0) {
+        await operation();
+      }
+    });
+    // An unsuccessful open must not poison the next queued source change.
+    _mediaOperations = result.catchError((Object _) {});
+    return result;
+  }
+
+  Future<void> _fallbackParallel(int generation) async {
+    final player = _videoPlayerController;
+    final direct = _parallelDirectMedia;
+    if (generation != _sourceGeneration ||
+        _parallelFallbackTaken ||
+        player == null ||
+        direct == null) {
+      return;
+    }
+    _parallelFallbackTaken = true;
+    _parallelSession?.close();
+    _parallelSession = null;
+    if (!_parallelOpened) return;
+    final position = _processing ? direct.start : player.state.position;
+    final rate = player.state.rate;
+    final volume = PlatformUtils.isMobile
+        ? Pref.playerVolume.toDouble()
+        : this.volume.value * 100;
+    final subtitle = player.state.track.subtitle;
+    try {
+      await _mediaOperation(generation, () async {
+        await player.open(direct.copyWith(start: position), play: false);
+        if (generation != _sourceGeneration) return;
+        await player.setRate(rate);
+        if (generation != _sourceGeneration) return;
+        await player.setVolume(volume);
+        if (generation != _sourceGeneration) return;
+        await player.setSubtitleTrack(subtitle);
+        if (generation != _sourceGeneration) return;
+        if (_parallelDesiredPlaying) await player.play();
+      });
+      if (generation == _sourceGeneration) {
+        SmartDialog.showToast('并发加载已回退到普通播放');
+      }
+    } catch (_) {
+      if (generation == _sourceGeneration) dataStatus.value = DataStatus.error;
+    }
+  }
 
   Timer? _timer;
   StreamSubscription? _subForSeek;
@@ -604,8 +678,14 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     Volume? volume,
     bool autoFullScreenFlag = false,
   }) async {
+    final generation = ++_sourceGeneration;
     try {
       _processing = true;
+      _parallelSession?.close();
+      _parallelSession = null;
+      _parallelDirectMedia = null;
+      _parallelFallbackTaken = false;
+      _parallelOpened = false;
       this.isLive = isLive;
       _videoType = videoType ?? VideoType.ugc;
       this.width = width;
@@ -637,8 +717,11 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
       if (_playerCount == 0) {
         return;
       }
+      if (generation != _sourceGeneration) return;
+      _parallelDesiredPlaying = autoplay;
       // 配置Player 音轨、字幕等等
-      await _createVideoController(dataSource, seekTo, volume);
+      await _createVideoController(dataSource, seekTo, volume, generation);
+      if (generation != _sourceGeneration) return;
 
       if (_playerCount == 0) {
         _removeListeners();
@@ -658,15 +741,16 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
       }
 
       await _initializePlayer();
-      onInit?.call();
+      if (generation == _sourceGeneration) onInit?.call();
     } catch (err, stackTrace) {
+      if (generation != _sourceGeneration) return;
       dataStatus.value = DataStatus.error;
       if (kDebugMode) {
         debugPrint(stackTrace.toString());
         debugPrint('plPlayer err:  $err');
       }
     } finally {
-      _processing = false;
+      if (generation == _sourceGeneration) _processing = false;
     }
   }
 
@@ -770,27 +854,29 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     DataSource dataSource,
     Duration? seekTo,
     Volume? volume,
+    int generation,
   ) async {
     isBuffering.value = false;
     _heartDuration = 0;
     danmakuController?.clear();
 
-    var player = _videoPlayerController;
-
-    if (player == null) {
-      player = await _initPlayer();
-      if (_playerCount == 0) {
-        _removeListeners();
-        player.dispose();
-        player = null;
-        _videoController = null;
-        return;
+    await _mediaOperation(generation, () async {
+      if (_videoPlayerController == null) {
+        final created = await _initPlayer();
+        if (_playerCount == 0) {
+          _removeListeners();
+          created.dispose();
+          _videoController = null;
+          return;
+        }
+        _videoPlayerController = created;
+        if (isAnim && superResolutionType.value != .disable) {
+          await setShader();
+        }
       }
-      _videoPlayerController = player;
-      if (isAnim && superResolutionType.value != .disable) {
-        await setShader();
-      }
-    }
+    });
+    final player = _videoPlayerController;
+    if (player == null || generation != _sourceGeneration) return;
 
     final Map<String, String> extras = {
       if (dataSource is FileSource)
@@ -801,36 +887,64 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
         ...buffer,
     };
 
-    String video = dataSource.videoSource;
-    if (dataSource.audioSource case final audio? when (audio.isNotEmpty)) {
+    String mediaUri(String video, String? audio) {
+      if (audio == null || audio.isEmpty) return video;
       if (onlyPlayAudio.value) {
-        video = audio;
-      } else {
-        // dely_open need provide length
-        video =
-            ('edl://'
-            '!no_chapters;'
-            // '!delay_open,media_type=video;'
-            '%${isFileSource ? utf8.encode(video).length : video.length}%$video;'
-            '!new_stream;!no_chapters;'
-            // '!delay_open,media_type=audio;'
-            '%${isFileSource ? utf8.encode(audio).length : audio.length}%$audio');
+        return audio;
       }
-      audioFilterExtras(volume, map: extras);
+      return 'edl://!no_chapters;'
+          '%${utf8.encode(video).length}%$video;'
+          '!new_stream;!no_chapters;'
+          '%${utf8.encode(audio).length}%$audio';
     }
 
+    if (dataSource.audioSource?.isNotEmpty == true) {
+      audioFilterExtras(volume, map: extras);
+    }
     assert(!isLive || seekTo == null);
-    await player.open(
-      Media(
-        video,
-        start: seekTo,
-        extras: extras.isEmpty ? null : extras,
-      ),
-      play: false,
+    final direct = Media(
+      mediaUri(dataSource.videoSource, dataSource.audioSource),
+      start: seekTo,
+      extras: extras.isEmpty ? null : extras,
+    );
+    var media = direct;
+    if (generation != _sourceGeneration) return;
+    if (!isLive &&
+        dataSource is NetworkSource &&
+        ParallelPlaybackSession.enabled &&
+        dataSource.parallelIdentity != null) {
+      final session = ParallelPlaybackSession(
+        () => unawaited(_fallbackParallel(generation)),
+      );
+      _parallelSession = session;
+      _parallelDirectMedia = direct;
+      final sources = await session.prepare(
+        dataSource,
+        audioOnly: onlyPlayAudio.value,
+      );
+      if (generation != _sourceGeneration) {
+        session.close();
+        return;
+      }
+      if (sources != null && !_parallelFallbackTaken) {
+        media = direct.copyWith(uri: mediaUri(sources.$1, sources.$2));
+      } else {
+        session.close();
+        _parallelSession = null;
+      }
+    }
+    final currentPlayer = player;
+    await _mediaOperation(
+      generation,
+      () {
+        _parallelOpened = _parallelSession != null;
+        return currentPlayer.open(media, play: false);
+      },
     );
   }
 
   Future<void>? refreshPlayer() {
+    if (_parallelSession != null) return _fallbackParallel(_sourceGeneration);
     if (dataSource is FileSource) {
       return null;
     }
@@ -998,6 +1112,9 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           }
         })),
       stream.error.listen((String event) {
+        // The proxy emits a structured failure once. Seek/disconnect messages
+        // from mpv must not trigger the ordinary URL reconnect loop.
+        if (_parallelSession != null || _parallelFallbackTaken) return;
         if (dataSource is FileSource &&
             event.startsWith("Failed to open file")) {
           return;
@@ -1079,12 +1196,13 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     _heartDuration = position.inSeconds;
 
     Future<void> seek() async {
-      if (isSeek) {
+      if (isSeek && _parallelSession == null) {
         /// 拖动进度条调节时，不等待第一帧，防止抖动
         await _videoPlayerController?.stream.buffer.first;
       }
       danmakuController?.clear();
       try {
+        _parallelSession?.proxy?.cancelReaders();
         await _videoPlayerController?.seek(position);
       } catch (e) {
         if (kDebugMode) debugPrint('seek failed: $e');
@@ -1138,6 +1256,8 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   /// 播放视频
   Future<void> play({bool repeat = false, bool hideControls = true}) async {
     if (_playerCount == 0) return;
+    _parallelDesiredPlaying = true;
+    _parallelSession?.proxy?.setPaused(false);
     // 播放时自动隐藏控制条
     controls = !hideControls;
     // repeat为true，将从头播放
@@ -1156,6 +1276,8 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   /// 暂停播放
   Future<void> pause({bool notify = true, bool isInterrupt = false}) async {
+    _parallelDesiredPlaying = false;
+    _parallelSession?.proxy?.setPaused(true);
     await _videoPlayerController?.pause();
     playerStatus.value = PlayerStatus.paused;
 
@@ -1562,6 +1684,10 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     }
 
     _playerCount = 0;
+    _sourceGeneration++;
+    _parallelSession?.close();
+    _parallelSession = null;
+    _parallelDirectMedia = null;
     if (removeSafeArea) {
       showSystemBar();
     }

@@ -131,6 +131,7 @@ class VideoDetailController extends GetxController
   double get uiScale => plPlayerController.uiScale;
 
   late VideoItem firstVideo;
+  AudioItem? _parallelAudio;
   String? videoUrl;
   String? audioUrl;
   Duration? defaultST;
@@ -700,6 +701,7 @@ class VideoDetailController extends GetxController
         orElse: () => data.dash!.audio!.first,
       );
       audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
+      _parallelAudio = firstAudio;
     }
 
     playerInit();
@@ -736,6 +738,13 @@ class VideoDetailController extends GetxController
           : NetworkSource(
               videoSource: videoUrl!,
               audioSource: audioUrl,
+              parallelIdentity: isUgc && data.dash != null && !data.hasDrm
+                  ? '${cid.value}:${firstVideo.id}:${firstVideo.codecs}:${_parallelAudio?.id}'
+                  : null,
+              videoCandidates: data.dash != null
+                  ? firstVideo.playUrls.toList()
+                  : const [],
+              audioCandidates: _parallelAudio?.playUrls.toList() ?? const [],
             ),
       seekTo: seek,
       duration: data.timeLength == null
@@ -984,6 +993,7 @@ class VideoDetailController extends GetxController
       } else {
         audioUrl = '';
       }
+      _parallelAudio = firstAudio;
       await _initPlayerIfNeeded(autoFullScreenFlag);
     } else {
       _autoPlay.value = false;

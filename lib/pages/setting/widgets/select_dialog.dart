@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:PiliPlus/http/browser_ua.dart';
 import 'package:PiliPlus/http/constants.dart';
@@ -90,7 +91,9 @@ class _CdnSelectDialogState extends State<CdnSelectDialog> {
 
   @override
   void initState() {
-    _cdnSpeedTest = Pref.cdnSpeedTest;
+    _cdnSpeedTest =
+        Pref.cdnSpeedTest &&
+        !(Platform.isAndroid && Pref.parallelStreamEnabled);
     if (_cdnSpeedTest) {
       _dio =
           Dio(

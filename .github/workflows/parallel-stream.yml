@@ -1,0 +1,21 @@
+name: Parallel stream checks
+
+on:
+  push:
+    branches: [feature/parallel-stream]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+      # This suite uses dart:io and no pub packages or Flutter engine.
+      - run: dart tool/test_parallel_stream.dart

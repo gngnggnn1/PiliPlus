@@ -42,6 +42,7 @@ class PlayUrlModel {
   List<Durl>? durl;
   List<FormatItem>? supportFormats;
   Volume? volume;
+  bool hasDrm = false;
 
   late int _lastPlayTime;
   int get lastPlayTime => _lastPlayTime;
@@ -90,6 +91,24 @@ class PlayUrlModel {
   }
 
   PlayUrlModel.fromJson(Map<String, dynamic> json) {
+    hasDrm =
+        json['is_drm'] == true ||
+        json['is_drm'] == 1 ||
+        json['drm_tech_type'] != null && json['drm_tech_type'] != 0;
+    final rawDash = json['dash'];
+    if (rawDash is Map) {
+      for (final key in ['video', 'audio']) {
+        final tracks = rawDash[key];
+        if (tracks is List &&
+            tracks.any(
+              (track) =>
+                  track is Map &&
+                  (track['drm_kid']?.toString().isNotEmpty ?? false),
+            )) {
+          hasDrm = true;
+        }
+      }
+    }
     from = json['from'];
     result = json['result'];
     message = json['message'];

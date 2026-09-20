@@ -640,6 +640,26 @@ abstract final class Pref {
   static bool get disableAudioCDN =>
       _setting.get(SettingBoxKey.disableAudioCDN, defaultValue: false);
 
+  static bool get parallelStreamEnabled =>
+      _setting.get(SettingBoxKey.parallelStreamEnabled, defaultValue: false);
+  static bool get parallelStreamWifiOnly =>
+      _setting.get(SettingBoxKey.parallelStreamWifiOnly, defaultValue: true);
+  static int get parallelStreamConnections {
+    final value = _setting.get(
+      SettingBoxKey.parallelStreamConnections,
+      defaultValue: 8,
+    );
+    return const [4, 8, 16].contains(value) ? value as int : 8;
+  }
+
+  static int get parallelStreamCdnMode {
+    final value = _setting.get(
+      SettingBoxKey.parallelStreamCdnMode,
+      defaultValue: 0,
+    );
+    return const [0, 1, 2].contains(value) ? value as int : 0;
+  }
+
   static int get minDurationForRcmd =>
       _setting.get(SettingBoxKey.minDurationForRcmd, defaultValue: 0);
 

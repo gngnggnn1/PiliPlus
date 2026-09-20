@@ -1,3 +1,9 @@
+> **PiliPlus Parallel：Android 实验分支**
+> 在原版基础上增加普通 DASH 视频并发加载，默认关闭、默认仅 Wi-Fi。
+> 安装后在「设置 → 音视频设置」开启「并发加载（实验性）」。
+> 使用说明、原理、构建方式及实机验证清单见 [并发加载说明](docs/parallel-stream.md)。
+> 本分支由个人维护，与上游官方版本可同时安装。
+
 <div align="center">
     <img width="200" height="200" src="assets/images/logo/logo.png">
 </div>

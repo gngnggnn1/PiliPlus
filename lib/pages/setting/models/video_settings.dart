@@ -9,6 +9,7 @@ import 'package:PiliPlus/pages/setting/models/model.dart';
 import 'package:PiliPlus/pages/setting/widgets/ordered_multi_select_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/audio_output_type.dart';
+import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/hwdec_type.dart';
 import 'package:PiliPlus/utils/filtering_text.dart';
 import 'package:PiliPlus/utils/storage.dart';
@@ -23,6 +24,55 @@ import 'package:material_design_icons_flutter/material_design_icons_flutter.dart
 import 'package:material_ui/material_ui.dart';
 
 List<SettingsModel> get videoSettings => [
+  if (Platform.isAndroid) ...[
+    NormalModel(
+      title: '并发加载状态',
+      leading: const Icon(Icons.info_outline),
+      getSubtitle: () => '${PlPlayerController.parallelStreamStatus}（点击刷新）',
+      onTap: (_, setState) => setState(),
+    ),
+    const SwitchModel(
+      title: '并发加载（实验性）',
+      subtitle: '多连接加载普通视频，可能改善海外卡顿；下次打开视频生效，关闭立即回退',
+      leading: Icon(Icons.bolt),
+      setKey: SettingBoxKey.parallelStreamEnabled,
+      defaultVal: false,
+    ),
+    const SwitchModel(
+      title: '并发加载仅 Wi-Fi',
+      subtitle: '关闭后允许蜂窝网络，可能增加流量和耗电',
+      leading: Icon(Icons.wifi),
+      setKey: SettingBoxKey.parallelStreamWifiOnly,
+      defaultVal: true,
+    ),
+    NormalModel(
+      title: '并发连接数',
+      leading: const Icon(Icons.speed),
+      getSubtitle: () => '${Pref.parallelStreamConnections} 个连接，音视频共用；下次打开视频生效',
+      onTap: (context, setState) => _showParallelOption(
+        context,
+        setState,
+        title: '并发连接数',
+        key: SettingBoxKey.parallelStreamConnections,
+        value: Pref.parallelStreamConnections,
+        values: const [(4, '4（省电）'), (8, '8（默认）'), (16, '16（较高负载）')],
+      ),
+    ),
+    NormalModel(
+      title: '并发加载 CDN',
+      leading: const Icon(Icons.cloud_outlined),
+      getSubtitle: () =>
+          '${const ['跟随现有设置', '优先大陆节点', '优先海外节点'][Pref.parallelStreamCdnMode]}；下次打开视频生效',
+      onTap: (context, setState) => _showParallelOption(
+        context,
+        setState,
+        title: '并发加载 CDN',
+        key: SettingBoxKey.parallelStreamCdnMode,
+        value: Pref.parallelStreamCdnMode,
+        values: const [(0, '跟随现有设置'), (1, '优先大陆节点'), (2, '优先海外节点')],
+      ),
+    ),
+  ],
   const SwitchModel(
     title: '开启硬解',
     subtitle: '以较低功耗播放视频，若异常卡死请关闭',
@@ -71,7 +121,7 @@ List<SettingsModel> get videoSettings => [
   const SwitchModel(
     title: 'CDN 测速',
     leading: Icon(Icons.speed),
-    subtitle: '测速通过模拟加载视频实现，注意流量消耗，结果仅供参考',
+    subtitle: '测速通过模拟加载视频实现，注意流量消耗；并发加载开启时暂停测速',
     setKey: SettingBoxKey.cdnSpeedTest,
     defaultVal: true,
   ),
@@ -178,6 +228,25 @@ List<SettingsModel> get videoSettings => [
     onTap: _showHwDecDialog,
   ),
 ];
+
+Future<void> _showParallelOption(
+  BuildContext context,
+  VoidCallback setState, {
+  required String title,
+  required String key,
+  required int value,
+  required List<(int, String)> values,
+}) async {
+  final result = await showDialog<int>(
+    context: context,
+    builder: (_) =>
+        SelectDialog<int>(title: title, value: value, values: values),
+  );
+  if (result != null) {
+    await GStorage.setting.put(key, result);
+    setState();
+  }
+}
 
 Future<void> _showCDNDialog(BuildContext context, VoidCallback setState) async {
   final res = await showDialog<CDNService>(
