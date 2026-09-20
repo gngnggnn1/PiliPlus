@@ -40,7 +40,7 @@ flutter pub get
 ./tool/patch_android.ps1 -FlutterRoot C:\dev\flutter -PubCache $env:PUB_CACHE
 dart tool/test_parallel_stream.dart
 flutter analyze --no-pub
-flutter build apk --release --target-platform android-arm64 --no-pub
+flutter build apk --release --split-per-abi --target-platform android-arm64 --no-pub
 ```
 
 `patch_android.ps1` 使用上游 Android 补丁，但不修改全局 Git 身份、不重置 Flutter SDK，也不删除 pub 缓存。请使用独立的 Flutter SDK 和 pub cache。重复执行时检测已应用的补丁；冲突会停止。
